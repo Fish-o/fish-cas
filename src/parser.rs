@@ -1,7 +1,6 @@
-use crate::{
-  number::Number,
-  tokenizer::{Operator, Token},
-};
+use num::BigRational;
+
+use crate::tokenizer::{Operator, Token};
 pub fn parse(token_stream: Vec<Token>) -> Result<Expression, ParserError> {
   let batched_tokens = batch(&token_stream).expect("Failed to batch tokens");
   let parsed_token = parse_batches(batched_tokens)?;
@@ -154,7 +153,7 @@ pub enum ParserError {
 }
 #[derive(Debug, Clone)]
 pub enum Expression {
-  Value(Number),
+  Value(BigRational),
   Variable(String),
   Function(FunctionType, Vec<Expression>),
 }
@@ -167,4 +166,17 @@ pub enum FunctionType {
   Divide,
   Exponentiation,
   Sine,
+}
+
+impl std::fmt::Display for FunctionType {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      FunctionType::Add => write!(f, "+"),
+      FunctionType::Subtract => write!(f, "-"),
+      FunctionType::Multiply => write!(f, "*"),
+      FunctionType::Divide => write!(f, "/"),
+      FunctionType::Exponentiation => write!(f, "^"),
+      FunctionType::Sine => write!(f, "sin"),
+    }
+  }
 }

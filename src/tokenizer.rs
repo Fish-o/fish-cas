@@ -1,12 +1,15 @@
-use std::fmt::Write;
+use std::{fmt::Write, str::FromStr};
 
-use crate::{number::Number, parser::Expression};
+use num::BigRational;
+
+use crate::parser::Expression;
 
 pub fn tokenize(text: &str) -> Vec<Token> {
   let mut char_iter = text.chars().peekable();
   let mut token_stream: Vec<Token> = Vec::new();
   while let Some(char) = &char_iter.next() {
     let token = match *char {
+      ';' => Token::EndOfExpression,
       '(' => Token::BracketOpen,
       ')' => Token::BracketClose,
       '+' => Token::Operator(Operator::Add),
@@ -52,7 +55,8 @@ pub fn tokenize(text: &str) -> Vec<Token> {
             break;
           }
         }
-        Token::Number(Number::from_string(&number_chars))
+        let num = BigRational::from_str(&number_chars).expect("Failed to read number");
+        Token::Number(num)
       }
       _ => panic!("Token not found"),
     };
@@ -63,9 +67,10 @@ pub fn tokenize(text: &str) -> Vec<Token> {
 
 #[derive(Debug, Clone)]
 pub enum Token {
+  EndOfExpression,
   BracketOpen,
   BracketClose,
-  Number(Number),
+  Number(BigRational),
   Identifier(String),
   Operator(Operator),
   Batch(Box<Vec<Token>>),
