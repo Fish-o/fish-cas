@@ -1,14 +1,33 @@
-use std::ops::Div;
+use std::collections::HashMap;
 
-use num::{integer::Roots, rational::Ratio, traits::Pow, BigInt, BigRational, FromPrimitive};
+use num::{rational::Ratio, traits::Pow, BigInt, BigRational, FromPrimitive};
 
-use crate::parser::{Expression, FunctionType};
+use crate::{
+  parser::{Expression, FunctionType},
+  state::State,
+};
 
-pub fn evaluate(expression: &Expression) -> Result<Expression, EvaluationError> {
+pub fn evaluate(expressions: &Vec<Expression>) -> Result<Vec<Expression>, ExtendedEvaluationError> {
+  let mut state = State::new();
+
+  let mut new_expressions = vec![];
+  for (count, expression) in expressions.iter().enumerate() {
+    let new_expression = evaluate_single(expression);
+    if let Err(err) = new_expression {
+      return Err(ExtendedEvaluationError::LocatedEvaluationError(err, count));
+    } else {
+      new_expressions.push(new_expression.unwrap());
+    }
+  }
+  Ok(new_expressions)
+}
+
+fn evaluate_single(expression: &Expression) -> Result<Expression, EvaluationError> {
   Ok(match expression {
     Expression::Value(_) => expression.clone(),
     Expression::Variable(_) => expression.clone(),
     Expression::Function(function_type, arguments) => evaluate_function(function_type, arguments)?,
+    Expression::Assignment(_, _) => todo!(),
   })
 }
 
@@ -17,7 +36,10 @@ fn evaluate_function(
   arguments: &Vec<Expression>,
 ) -> Result<Expression, EvaluationError> {
   assure_argument_length(function_type, arguments)?;
-  let evaluated_arguments = arguments.iter().map(|el| evaluate(el)).collect::<Vec<_>>();
+  let evaluated_arguments = arguments
+    .iter()
+    .map(|el| evaluate_single(el))
+    .collect::<Vec<_>>();
   let mut all_values = true;
   let mut arguments = vec![];
   for argument in evaluated_arguments {
@@ -65,7 +87,7 @@ fn evaluate_function(
           Ratio::new(numer, denom)
         }
       }
-      FunctionType::Sine => unimplemented!(),
+      FunctionType::Custom(_) => todo!(),
     };
     Ok(Expression::Value(new_value))
   } else {
@@ -90,7 +112,7 @@ fn assure_argument_length(
     FunctionType::Multiply => 2,
     FunctionType::Divide => 2,
     FunctionType::Exponentiation => 2,
-    FunctionType::Sine => 1,
+    FunctionType::Custom(_) => todo!(),
   };
   let actual_length = arguments.len();
   if actual_length != required_length {
@@ -107,4 +129,10 @@ pub enum EvaluationError {
   UnknownEvaluationError(String),
   ArgumentCountMismatch(String),
   ValueToLarge(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum ExtendedEvaluationError {
+  EvaluationError(EvaluationError),
+  LocatedEvaluationError(EvaluationError, usize),
 }

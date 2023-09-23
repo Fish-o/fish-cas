@@ -1,10 +1,77 @@
-use num::BigRational;
+use num::{BigRational, FromPrimitive};
 
 use crate::tokenizer::{Operator, Token};
-pub fn parse(token_stream: Vec<Token>) -> Result<Expression, ParserError> {
-  let batched_tokens = batch(&token_stream).expect("Failed to batch tokens");
-  let parsed_token = parse_batches(batched_tokens)?;
-  Ok(parsed_token)
+pub fn parse(token_stream: Vec<Token>) -> Result<Vec<Expression>, ExtendedParserError> {
+  let lines = token_stream
+    .split(|el| match el {
+      Token::EndOfExpression => true,
+      _ => false,
+    })
+    .collect::<Vec<_>>();
+
+  let mut expressions = vec![];
+  for (index, token_stream) in lines.iter().enumerate() {
+    let mut token_stream = token_stream.to_vec();
+    let indices = token_stream
+      .iter()
+      .enumerate()
+      .filter(|(_, t)| match t {
+        Token::Assignment => true,
+        _ => false,
+      })
+      .map(|(i, _)| i)
+      .collect::<Vec<_>>();
+    if indices.len() > 1 {
+      return Err(ExtendedParserError::LocatedParserError(
+        ParserError::InvalidAssignment("More then 1 assignment present in expression".to_string()),
+        index,
+      ));
+    } else if indices.len() == 1 {
+      let assignment_index = indices[0];
+      let left = token_stream.drain(0..assignment_index).collect::<Vec<_>>();
+      let right = token_stream
+        .drain(1..token_stream.len())
+        .collect::<Vec<_>>();
+      let left = parse(left);
+      let right = parse(right);
+      if let Err(l_err) = left {
+        match l_err {
+          ExtendedParserError::ParserError(e) | ExtendedParserError::LocatedParserError(e, _) => {
+            return Err(ExtendedParserError::LocatedParserError(e, index))
+          }
+        }
+      } else if let Err(r_err) = right {
+        match r_err {
+          ExtendedParserError::ParserError(e) | ExtendedParserError::LocatedParserError(e, _) => {
+            return Err(ExtendedParserError::LocatedParserError(e, index))
+          }
+        }
+      }
+      let left = left
+        .unwrap()
+        .first()
+        .expect("Left hand side no first element")
+        .clone();
+      let right = right
+        .unwrap()
+        .first()
+        .expect("Right hand side no first element")
+        .clone();
+      let expression = Expression::Assignment(Box::new(left), Box::new(right));
+      expressions.push(expression);
+    } else {
+      let batched_tokens = batch(&token_stream);
+      if let Err(err) = batched_tokens {
+        return Err(ExtendedParserError::LocatedParserError(err, index));
+      }
+      let expression = parse_batches(batched_tokens.unwrap());
+      if let Err(err) = expression {
+        return Err(ExtendedParserError::LocatedParserError(err, index));
+      }
+      expressions.push(expression.unwrap())
+    }
+  }
+  Ok(expressions)
 }
 
 pub fn batch(tokens: &Vec<Token>) -> Result<Vec<Token>, ParserError> {
@@ -16,6 +83,7 @@ pub fn batch(tokens: &Vec<Token>) -> Result<Vec<Token>, ParserError> {
   let mut new_batch = vec![];
   while index < length {
     let token = &tokens[index];
+
     match token {
       Token::BracketOpen => {
         if bracket_count > 0 {
@@ -59,8 +127,106 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
   if tokens.len() == 1 {
     return Ok(parse_token(&tokens[0])?);
   }
-
   let mut tokens = tokens;
+  let mut index = 0;
+  let mut length = tokens.len();
+  while index + 1 < length {
+    let token = &tokens[index];
+    let next_token = &tokens[index + 1];
+    match (token, next_token) {
+      (Token::Negate, Token::Negate) => {
+        tokens.remove(index);
+        tokens.remove(index);
+        length -= 2;
+      }
+      (Token::Identifier(ident), Token::Batch(batch)) => {
+        let arguments_tokens = batch
+          .split(|el| match el {
+            Token::Separator => true,
+            _ => false,
+          })
+          .collect::<Vec<_>>();
+
+        let mut arguments = vec![];
+        for batch in arguments_tokens {
+          arguments.push(parse_batches(batch.to_vec())?);
+        }
+        let expr = Expression::Function(FunctionType::Custom(ident.to_string()), arguments);
+        std::mem::replace(&mut tokens[index], Token::Expression(expr));
+        tokens.remove(index + 1);
+        length -= 1;
+      }
+      (Token::Negate, Token::Batch(batch)) => {
+        let batch = parse_batches(batch.to_vec())?;
+        let expr = Expression::Function(
+          FunctionType::Multiply,
+          vec![
+            Expression::Value(BigRational::from_i32(-1).expect("Couldn't create number '-1'")),
+            batch,
+          ],
+        );
+        std::mem::replace(&mut tokens[index], Token::Expression(expr));
+        tokens.remove(index + 1);
+        length -= 1;
+      }
+      (Token::Negate, Token::Identifier(ident)) => {
+        let mut should_negate = true;
+        let mut identifier = ident.clone();
+        if index + 2 < length {
+          let next_el = &tokens[index + 2];
+          match next_el {
+            Token::Batch(batch) => {
+              should_negate = false;
+              let arguments_tokens = batch
+                .split(|el| match el {
+                  Token::Separator => true,
+                  _ => false,
+                })
+                .collect::<Vec<_>>();
+
+              let mut arguments = vec![];
+              for batch in arguments_tokens {
+                arguments.push(parse_batches(batch.to_vec())?);
+              }
+              let function_expr =
+                Expression::Function(FunctionType::Custom(ident.clone()), arguments);
+              let multiply_expr = Expression::Function(
+                FunctionType::Multiply,
+                vec![
+                  Expression::Value(
+                    BigRational::from_i32(-1).expect("Couldn't create number '-1'"),
+                  ),
+                  function_expr,
+                ],
+              );
+              std::mem::replace(&mut tokens[index], Token::Expression(multiply_expr));
+              tokens.remove(index + 1);
+              length -= 1;
+            }
+            _ => {}
+          }
+        }
+
+        if should_negate {
+          let variable = Expression::Variable(identifier);
+          let expr = Expression::Function(
+            FunctionType::Multiply,
+            vec![
+              Expression::Value(BigRational::from_i32(-1).expect("Couldn't create number '-1'")),
+              variable,
+            ],
+          );
+          std::mem::replace(&mut tokens[index], Token::Expression(expr));
+          tokens.remove(index + 1);
+          length -= 1;
+        }
+      }
+
+      _ => {}
+    }
+    index += 1;
+  }
+
   let mut order = 0;
   while order < 3 {
     let mut index = 0;
@@ -143,19 +309,27 @@ fn get_order(op: &Operator) -> u32 {
     Operator::Subtract => 2,
   }
 }
-#[derive(Debug)]
+
+#[derive(Debug, Clone)]
+pub enum ExtendedParserError {
+  ParserError(ParserError),
+  LocatedParserError(ParserError, usize),
+}
+#[derive(Debug, Clone)]
 pub enum ParserError {
   BatchingError(String),
   LeftHandMissing(String),
   RightHandMissing(String),
   UnexpectedToken(String),
   UnknownParserError(String),
+  InvalidAssignment(String),
 }
 #[derive(Debug, Clone)]
 pub enum Expression {
   Value(BigRational),
   Variable(String),
   Function(FunctionType, Vec<Expression>),
+  Assignment(Box<Expression>, Box<Expression>),
 }
 
 #[derive(Debug, Clone)]
@@ -165,7 +339,7 @@ pub enum FunctionType {
   Multiply,
   Divide,
   Exponentiation,
-  Sine,
+  Custom(String),
 }
 
 impl std::fmt::Display for FunctionType {
@@ -176,7 +350,7 @@ impl std::fmt::Display for FunctionType {
       FunctionType::Multiply => write!(f, "*"),
       FunctionType::Divide => write!(f, "/"),
       FunctionType::Exponentiation => write!(f, "^"),
-      FunctionType::Sine => write!(f, "sin"),
+      FunctionType::Custom(name) => write!(f, "{}(...)", name),
     }
   }
 }

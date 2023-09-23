@@ -1,22 +1,53 @@
-use std::{fmt::Write, str::FromStr};
+use std::{fmt::Write, ops::Neg, str::FromStr};
 
 use num::BigRational;
 
 use crate::parser::Expression;
 
-pub fn tokenize(text: &str) -> Vec<Token> {
+pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError> {
   let mut char_iter = text.chars().peekable();
   let mut token_stream: Vec<Token> = Vec::new();
   while let Some(char) = &char_iter.next() {
     let token = match *char {
       ';' => Token::EndOfExpression,
+      ',' => Token::Separator,
       '(' => Token::BracketOpen,
       ')' => Token::BracketClose,
       '+' => Token::Operator(Operator::Add),
-      '-' => Token::Operator(Operator::Subtract),
+      '-' => {
+        if let Some(_) = char_iter.peek() {
+          let last_token = token_stream.last();
+          if last_token.is_none() {
+            Token::Negate
+          } else {
+            let last_token = last_token.unwrap();
+            if match last_token {
+              Token::BracketOpen => true,
+              Token::Operator(_) => true,
+              Token::Negate => true,
+              Token::EndOfExpression => true,
+              Token::Assignment => true,
+              Token::Separator => true,
+
+              Token::Identifier(_) => false,
+              Token::Batch(_) => false,
+              Token::BracketClose => false,
+              Token::Number(_) => false,
+              Token::Expression(_) => false,
+            } {
+              Token::Negate
+            } else {
+              Token::Operator(Operator::Subtract)
+            }
+          }
+        } else {
+          Token::Operator(Operator::Subtract)
+        }
+      }
       '*' => Token::Operator(Operator::Multiply),
       '/' => Token::Operator(Operator::Divide),
       '^' => Token::Operator(Operator::Power),
+      '=' => Token::Assignment,
       'A'..='Z' | 'a'..='z' => {
         let mut identifier = "".to_owned();
         identifier.write_char(*char).expect("Failed to write char");
@@ -38,14 +69,14 @@ pub fn tokenize(text: &str) -> Vec<Token> {
         }
         Token::Identifier(identifier)
       }
-      '0'..='9' => {
+      '0'..='9' | '.' | '_' => {
         let mut number_chars = "".to_owned();
         number_chars
           .write_char(*char)
           .expect("Failed to write char");
         while let Some(peeked) = &char_iter.peek() {
           if match peeked {
-            '0'..='9' => true,
+            '0'..='9' | '.' | '_' => true,
             _ => false,
           } {
             number_chars
@@ -55,14 +86,81 @@ pub fn tokenize(text: &str) -> Vec<Token> {
             break;
           }
         }
-        let num = BigRational::from_str(&number_chars).expect("Failed to read number");
+        let mut number = "".to_owned();
+        let mut decimal_place = -1 as i32;
+        for char in number_chars.chars() {
+          match char {
+            '0'..='9' => {
+              if decimal_place >= 0 {
+                decimal_place += 1;
+              }
+              number += char.to_string().as_str();
+            }
+            '_' => {}
+            '.' => {
+              if decimal_place >= 0 {
+                return Err(TokenError::InvalidNumber(
+                  "To many decimals in one number".to_string(),
+                ));
+              } else {
+                decimal_place = 0
+              }
+            }
+            _ => unreachable!(),
+          }
+        }
+        if decimal_place > 0 {
+          number = number + "/1" + "0".repeat(decimal_place.try_into().unwrap()).as_str()
+        }
+        let num = BigRational::from_str(&number).expect("Failed to read number");
         Token::Number(num)
       }
       _ => panic!("Token not found"),
     };
     token_stream.push(token)
   }
-  token_stream
+
+  let length = token_stream.len() as usize;
+  let mut index = length - 1;
+  while index > 0 {
+    let token = &token_stream[index];
+    let before = &token_stream[index - 1];
+    match token {
+      Token::Number(n) => match before {
+        Token::Negate => {
+          let new_number = n.neg();
+          let _ = std::mem::replace(&mut token_stream[index - 1], Token::Number(new_number));
+          token_stream.remove(index);
+        }
+        _ => {}
+      },
+      _ => {}
+    }
+    index -= 1;
+  }
+
+  let mut length = token_stream.len();
+  let mut index = 0;
+  while index < length - 2 {
+    let token = &token_stream[index];
+    let next_token = &token_stream[index + 1];
+    if match (token, next_token) {
+      (Token::Identifier(_), Token::Number(_))
+      | (Token::Number(_), Token::Identifier(_))
+      | (Token::BracketClose, Token::Number(_))
+      | (Token::BracketClose, Token::Identifier(_))
+      | (Token::BracketClose, Token::BracketOpen)
+      | (Token::Number(_), Token::BracketOpen) => true,
+      (Token::Identifier(_), Token::BracketOpen) => false,
+      _ => false,
+    } {
+      index += 1;
+      token_stream.insert(index, Token::Operator(Operator::Multiply));
+      length = token_stream.len();
+    }
+    index += 1;
+  }
+  Ok(token_stream)
 }
 
 #[derive(Debug, Clone)]
@@ -70,11 +168,14 @@ pub enum Token {
   EndOfExpression,
   BracketOpen,
   BracketClose,
+  Negate,
   Number(BigRational),
   Identifier(String),
   Operator(Operator),
   Batch(Box<Vec<Token>>),
   Expression(Expression),
+  Assignment,
+  Separator,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +185,11 @@ pub enum Operator {
   Multiply,
   Divide,
   Power,
+}
+
+#[derive(Debug, Clone)]
+pub enum TokenError {
+  InvalidNumber(String),
 }
 
 impl std::fmt::Display for Operator {
