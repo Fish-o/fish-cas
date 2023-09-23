@@ -5,4 +5,4 @@ You do 2+3*5 and it spits out 25, you give it an equation like 3x=5 and it doesn
 That's why i'm making this.
 Also, i was bored.
 
-Anyways, we'll se how much it can do by the end! It's a fun project and I'll learn something from it for sure.
+Anyways, we'll see how much it can do by the end! It's a fun project and I'll learn something from it for sure.
