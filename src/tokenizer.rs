@@ -4,6 +4,13 @@ use num::BigRational;
 
 use crate::parser::Expression;
 
+fn convert_keyword(text: &str) -> Option<Token> {
+  match text {
+    "true" => Some(Token::Boolean(true)),
+    "false" => Some(Token::Boolean(false)),
+    _ => None,
+  }
+}
 pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError> {
   let mut char_iter = text.chars().peekable();
   let mut token_stream: Vec<Token> = Vec::new();
@@ -23,6 +30,7 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError> {
             let last_token = last_token.unwrap();
             if match last_token {
               Token::BracketOpen => true,
+              Token::Comparator(_) => true,
               Token::Operator(_) => true,
               Token::Negate => true,
               Token::EndOfExpression => true,
@@ -34,6 +42,7 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError> {
               Token::BracketClose => false,
               Token::Number(_) => false,
               Token::Expression(_) => false,
+              Token::Boolean(_) => false,
             } {
               Token::Negate
             } else {
@@ -47,13 +56,64 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError> {
       '*' => Token::Operator(Operator::Multiply),
       '/' => Token::Operator(Operator::Divide),
       '^' => Token::Operator(Operator::Power),
-      '=' => Token::Assignment,
+      '=' => {
+        if let Some(token) = char_iter.peek() {
+          match token {
+            '=' => {
+              char_iter.next();
+              Token::Comparator(Comparator::Equal)
+            }
+            _ => Token::Assignment,
+          }
+        } else {
+          Token::Assignment
+        }
+      }
+      '>' => {
+        if let Some(token) = char_iter.peek() {
+          match token {
+            '=' => {
+              char_iter.next();
+              Token::Comparator(Comparator::GreaterThanOrEqual)
+            }
+            _ => Token::Comparator(Comparator::GreaterThan),
+          }
+        } else {
+          Token::Comparator(Comparator::GreaterThan)
+        }
+      }
+      '<' => {
+        if let Some(token) = char_iter.peek() {
+          match token {
+            '=' => {
+              char_iter.next();
+              Token::Comparator(Comparator::LessThanOrEqual)
+            }
+            _ => Token::Comparator(Comparator::LessThan),
+          }
+        } else {
+          Token::Comparator(Comparator::LessThan)
+        }
+      }
+      '!' => {
+        if let Some(token) = char_iter.peek() {
+          match token {
+            '=' => {
+              char_iter.next();
+              Token::Comparator(Comparator::NotEqual)
+            }
+            _ => panic!("Token '!' not found"),
+          }
+        } else {
+          panic!("Token '!' not found")
+        }
+      }
       'A'..='Z' | 'a'..='z' => {
         let mut identifier = "".to_owned();
         identifier.write_char(*char).expect("Failed to write char");
         while let Some(peeked) = char_iter.peek() {
           if match peeked {
-            'A'..='Z' | 'a'..='z' | '_' | '0'..='9' => true,
+            'A'..='Z' | 'a'..='z' | '_' => true,
             _ => false,
           } {
             identifier
@@ -67,7 +127,7 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError> {
             break;
           }
         }
-        Token::Identifier(identifier)
+        convert_keyword(&identifier).unwrap_or(Token::Identifier(identifier))
       }
       '0'..='9' | '.' | '_' => {
         let mut number_chars = "".to_owned();
@@ -115,11 +175,11 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError> {
         let num = BigRational::from_str(&number).expect("Failed to read number");
         Token::Number(num)
       }
-      _ => panic!("Token not found"),
+      ' ' | '\n' | '\t' => continue,
+      t => panic!("Token '{}' not found", t),
     };
     token_stream.push(token)
   }
-
   let length = token_stream.len() as usize;
   let mut index = length - 1;
   while index > 0 {
@@ -170,8 +230,10 @@ pub enum Token {
   BracketClose,
   Negate,
   Number(BigRational),
+  Boolean(bool),
   Identifier(String),
   Operator(Operator),
+  Comparator(Comparator),
   Batch(Box<Vec<Token>>),
   Expression(Expression),
   Assignment,
@@ -185,6 +247,27 @@ pub enum Operator {
   Multiply,
   Divide,
   Power,
+}
+#[derive(Debug, Clone)]
+pub enum Comparator {
+  Equal,
+  NotEqual,
+  LessThan,
+  GreaterThan,
+  LessThanOrEqual,
+  GreaterThanOrEqual,
+}
+impl std::fmt::Display for Comparator {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Comparator::Equal => write!(f, "=="),
+      Comparator::NotEqual => write!(f, "!="),
+      Comparator::LessThan => write!(f, "<"),
+      Comparator::GreaterThan => write!(f, ">"),
+      Comparator::LessThanOrEqual => write!(f, "<="),
+      Comparator::GreaterThanOrEqual => write!(f, ">="),
+    }
+  }
 }
 
 #[derive(Debug, Clone)]

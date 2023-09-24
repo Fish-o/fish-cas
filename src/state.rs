@@ -1,10 +1,10 @@
-use crate::parser::Expression;
+use crate::{evaluator::EvaluationError, parser::Expression};
 use num::BigRational;
-use std::{collections::HashMap, process::id};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct State {
-  variables: HashMap<String, BigRational>,
+  variables: HashMap<String, Expression>,
   functions: HashMap<String, Function>,
 }
 
@@ -15,30 +15,26 @@ impl State {
       functions: HashMap::new(),
     }
   }
-  pub fn store_numeric_variable(
+  pub fn store_variable(
     &mut self,
     variable: &String,
-    number: &BigRational,
-  ) -> Result<BigRational, StateError> {
+    exp: &Expression,
+  ) -> Result<Expression, StateError> {
     if let Some(val) = self.variables.get(variable) {
-      if val != number {
-        return Err(StateError::ContradictoryStateError(format!(
-          "Can't set variable '{}' to '{}', because it was previously set to '{}'",
-          variable, number, val
-        )));
-      }
+      todo!("Implement a system where you can assign variables multiple times or something, maybe make it compare instead")
     } else {
-      self.variables.insert(variable.clone(), number.clone());
+      self.variables.insert(variable.clone(), exp.clone());
     }
-    Ok(number.clone())
+    Ok(exp.clone())
   }
-  pub fn recall_numeric_variable(&self, variable: &String) -> Option<BigRational> {
+  pub fn recall_variable(&self, variable: &String) -> Option<Expression> {
     let data = self.variables.get(variable);
-    if let Some(numb) = data {
-      return Some(numb.clone());
+    if let Some(exp) = data {
+      return Some(exp.clone());
     }
     None
   }
+
   pub fn store_function(
     &mut self,
     identifier: &String,
@@ -83,4 +79,30 @@ pub enum VariableState {
 pub struct Function {
   arguments: Vec<String>,
   expression: Expression,
+}
+
+impl Function {
+  pub fn argument_count(&self) -> usize {
+    return self.arguments.len();
+  }
+
+  pub fn get_expression(
+    &self,
+    supplied_arguments: &Vec<Expression>,
+  ) -> Result<Expression, EvaluationError> {
+    if supplied_arguments.len() != self.argument_count() {
+      return Err(EvaluationError::ArgumentCountMismatch(format!(
+        "Expected {} arguments for function, supplied {}",
+        self.argument_count(),
+        supplied_arguments.len()
+      )));
+    }
+    let mut new_exp = self.expression.clone();
+    for i in 0..self.argument_count() {
+      let variable = &self.arguments[i];
+      let replacement = &supplied_arguments[i];
+      new_exp.substitute_in_place(variable, replacement)
+    }
+    Ok(new_exp)
+  }
 }

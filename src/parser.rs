@@ -1,6 +1,6 @@
 use num::{BigRational, FromPrimitive};
 
-use crate::tokenizer::{Operator, Token};
+use crate::tokenizer::{Comparator, Operator, Token};
 pub fn parse(token_stream: Vec<Token>) -> Result<Vec<Expression>, ExtendedParserError> {
   let lines = token_stream
     .split(|el| match el {
@@ -269,6 +269,39 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
       order += 1;
     }
   }
+
+  // Parse comparisons
+  let mut index = 1;
+  let mut length = tokens.len();
+  while index + 1 < length {
+    let prev_token = &tokens[index - 1];
+    let token = &tokens[index];
+    let next_token = &tokens[index + 1];
+    match token {
+      Token::Comparator(comparator) => {
+        let left = parse_token(prev_token)?;
+        let right = parse_token(next_token)?;
+        let comparator = match comparator {
+          Comparator::Equal => ComparisonType::Equal,
+          Comparator::NotEqual => ComparisonType::NotEqual,
+          Comparator::LessThan => ComparisonType::LessThan,
+          Comparator::GreaterThan => ComparisonType::GreaterThan,
+          Comparator::LessThanOrEqual => ComparisonType::LessThanOrEqual,
+          Comparator::GreaterThanOrEqual => ComparisonType::GreaterThanOrEqual,
+        };
+        let expression =
+          Expression::Comparison(comparator.clone(), Box::new(left), Box::new(right));
+        let _ = std::mem::replace(&mut tokens[index], Token::Expression(expression));
+        tokens.remove(index + 1);
+        tokens.remove(index - 1);
+        length -= 2;
+        index = 0;
+      }
+      _ => {}
+    }
+    index += 1;
+  }
+
   if tokens.len() > 1 {
     println!("{:?}", tokens);
     return Err(ParserError::UnknownParserError(
@@ -288,6 +321,7 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
 fn parse_token(token: &Token) -> Result<Expression, ParserError> {
   Ok(match token {
     Token::Number(number) => Expression::Value(number.clone()),
+    Token::Boolean(bool) => Expression::Boolean(bool.clone()),
     Token::Identifier(identifier) => Expression::Variable(identifier.clone()),
     Token::Operator(operator) => {
       return Err(ParserError::UnexpectedToken(format!(
@@ -295,9 +329,22 @@ fn parse_token(token: &Token) -> Result<Expression, ParserError> {
         operator
       )))
     }
+    Token::Comparator(comparator) => {
+      return Err(ParserError::UnexpectedToken(format!(
+        "Unexpected comparator '{}'",
+        comparator
+      )))
+    }
     Token::Batch(tokens) => parse_batches(tokens.to_vec())?,
     Token::Expression(expression) => expression.clone(),
-    _ => unreachable!(),
+    Token::BracketClose
+    | Token::BracketOpen
+    | Token::Assignment
+    | Token::EndOfExpression
+    | Token::Negate
+    | Token::Separator => {
+      unreachable!()
+    }
   })
 }
 fn get_order(op: &Operator) -> u32 {
@@ -327,9 +374,43 @@ pub enum ParserError {
 #[derive(Debug, Clone)]
 pub enum Expression {
   Value(BigRational),
+  Boolean(bool),
   Variable(String),
   Function(FunctionType, Vec<Expression>),
   Assignment(Box<Expression>, Box<Expression>),
+  Comparison(ComparisonType, Box<Expression>, Box<Expression>),
+}
+
+impl Expression {
+  pub fn substitute(&self, variable: &str, expression: &Expression) -> Expression {
+    let mut new_exp = self.clone();
+    new_exp.substitute_in_place(variable, expression);
+    new_exp
+  }
+  pub fn substitute_in_place(&mut self, variable: &str, expression: &Expression) {
+    match self {
+      Expression::Boolean(_) => {}
+      Expression::Value(val) => {}
+      Expression::Variable(ident) => {
+        if ident == variable {
+          let _ = std::mem::replace(self, expression.clone());
+        }
+      }
+      Expression::Function(name, args) => {
+        for arg in args {
+          arg.substitute_in_place(variable, expression)
+        }
+      }
+      Expression::Assignment(exp1, exp2) => {
+        exp1.substitute_in_place(variable, expression);
+        exp2.substitute_in_place(variable, expression);
+      }
+      Expression::Comparison(_, left, right) => {
+        left.substitute_in_place(variable, expression);
+        right.substitute_in_place(variable, expression);
+      }
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -351,6 +432,29 @@ impl std::fmt::Display for FunctionType {
       FunctionType::Divide => write!(f, "/"),
       FunctionType::Exponentiation => write!(f, "^"),
       FunctionType::Custom(name) => write!(f, "{}(...)", name),
+    }
+  }
+}
+
+#[derive(Clone, Debug)]
+pub enum ComparisonType {
+  Equal,
+  NotEqual,
+  LessThan,
+  GreaterThan,
+  LessThanOrEqual,
+  GreaterThanOrEqual,
+}
+
+impl std::fmt::Display for ComparisonType {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      ComparisonType::Equal => write!(f, "="),
+      ComparisonType::NotEqual => write!(f, "!="),
+      ComparisonType::LessThan => write!(f, "<"),
+      ComparisonType::GreaterThan => write!(f, ">"),
+      ComparisonType::LessThanOrEqual => write!(f, "<="),
+      ComparisonType::GreaterThanOrEqual => write!(f, ">="),
     }
   }
 }
