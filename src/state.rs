@@ -60,6 +60,11 @@ impl State {
   pub fn recall_function(&mut self, identifier: &String) -> Option<&mut Function> {
     self.functions.get_mut(identifier)
   }
+
+  pub fn clear(&mut self) {
+    self.variables.clear();
+    self.functions.clear();
+  }
 }
 
 #[derive(Debug, Clone)]

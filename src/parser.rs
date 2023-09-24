@@ -226,6 +226,18 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
           length -= 1;
         }
       }
+      (Token::Identifier(ident), Token::Number(numb))
+      | (Token::Number(numb), Token::Identifier(ident)) => {
+        let variable = Expression::Variable(ident.clone());
+        let expr = Expression::Function(
+          FunctionType::Multiply,
+          vec![variable, Expression::Value(numb.clone())],
+        );
+        let _ = std::mem::replace(&mut tokens[index], Token::Expression(expr));
+        tokens.remove(index + 1);
+        length -= 1;
+      }
+
       _ => {}
     }
     index += 1;
