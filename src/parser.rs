@@ -12,6 +12,9 @@ pub fn parse(token_stream: Vec<Token>) -> Result<Vec<Expression>, ExtendedParser
   let mut expressions = vec![];
   for (index, token_stream) in lines.iter().enumerate() {
     let mut token_stream = token_stream.to_vec();
+    if token_stream.len() == 0 {
+      continue;
+    }
     let indices = token_stream
       .iter()
       .enumerate()
@@ -455,7 +458,7 @@ pub enum ParserError {
   UnknownParserError(String),
   InvalidAssignment(String),
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expression {
   Value(BigRational),
   Boolean(bool),
@@ -465,6 +468,7 @@ pub enum Expression {
   Comparison(ComparisonType, Box<Expression>, Box<Expression>),
   Condition(Box<Expression>, Box<Expression>, Box<Expression>),
 }
+
 impl std::fmt::Display for Expression {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let str = match self {
@@ -536,7 +540,7 @@ impl Expression {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FunctionType {
   Add,
   Subtract,
@@ -559,7 +563,7 @@ impl std::fmt::Display for FunctionType {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ComparisonType {
   Equal,
   NotEqual,

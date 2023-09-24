@@ -44,8 +44,9 @@ impl State {
       Err(StateError::FunctionAlreadyDeclared)
     } else {
       let function = Function {
-        arguments: arguments,
-        expression: expression,
+        arguments,
+        expression,
+        cached_values: HashMap::new(),
       };
       self.functions.insert(identifier.clone(), function);
       return Ok(
@@ -56,28 +57,21 @@ impl State {
     }
   }
 
-  pub fn recall_function(&self, identifier: &String) -> Option<&Function> {
-    self.functions.get(identifier)
+  pub fn recall_function(&mut self, identifier: &String) -> Option<&mut Function> {
+    self.functions.get_mut(identifier)
   }
 }
 
 #[derive(Debug, Clone)]
 pub enum StateError {
-  // ContradictoryStateError(String),
   FunctionAlreadyDeclared,
-  // UnknownStateError(String),
 }
-// #[derive(Debug, Clone)]
-// pub enum VariableState {
-//   Numeric(BigRational),
-//   // Relation(String),
-//   // Function(Vec<String>, Expression),
-// }
 
 #[derive(Debug, Clone)]
 pub struct Function {
   arguments: Vec<String>,
   expression: Expression,
+  cached_values: HashMap<Vec<Expression>, Expression>,
 }
 
 impl Function {
@@ -103,5 +97,30 @@ impl Function {
       new_exp.substitute_in_place(variable, replacement)
     }
     Ok(new_exp)
+  }
+
+  pub fn evaluate(
+    state: &mut State,
+    name: &String,
+    arguments: Vec<Expression>,
+  ) -> Result<Expression, EvaluationError> {
+    let func = state.recall_function(name);
+    if func.is_none() {
+      return Err(EvaluationError::FunctionNotFound(name.to_string()));
+    }
+    let func = func.unwrap();
+    let cache = func.cached_values.get(&arguments);
+    if let Some(exp) = cache {
+      Ok(exp.clone())
+    } else {
+      let exp = func.get_expression(&arguments)?;
+      let exp = exp.evaluate(state)?;
+      let func = state.recall_function(name);
+      if func.is_none() {
+        return Err(EvaluationError::FunctionNotFound(name.to_string()));
+      }
+      func.unwrap().cached_values.insert(arguments, exp.clone());
+      Ok(exp)
+    }
   }
 }

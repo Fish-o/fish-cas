@@ -9,7 +9,7 @@ mod tokenizer;
  * | Create custom functions
  * | Add booleans
  * | Add comparators
- * - Add cases for functions
+ * | Add cases for functions
  * - Have exact roots: sqrt(50) = 5sqrt(2)
  * - Graphing
  * - Logarithms
@@ -19,14 +19,9 @@ mod tokenizer;
 
 fn main() {
   let input = "
-  f(x)= if x<=1 then 1 else f(x-1) + f(x-2);
-  f(0);
-  f(1);
-  f(2);
-  f(3);
-  f(4);
-  f(5)";
-
+  f(x)= if x<=2 then 1 else f(x-1) + f(x-2);
+  f(999);\n";
+  println!("Input: `{}`", input);
   let token_stream = tokenizer::tokenize(input).unwrap();
   let expressions = parser::parse(token_stream).unwrap();
   let evaluated = evaluator::evaluate(&expressions).unwrap();

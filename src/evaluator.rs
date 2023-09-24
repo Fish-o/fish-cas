@@ -2,7 +2,7 @@ use num::{rational::Ratio, traits::Pow, BigInt, BigRational, FromPrimitive};
 
 use crate::{
   parser::{ComparisonType, Expression, FunctionType},
-  state::{State, StateError},
+  state::{Function, State, StateError},
 };
 
 pub fn evaluate(expressions: &Vec<Expression>) -> Result<Vec<Expression>, ExtendedEvaluationError> {
@@ -10,7 +10,7 @@ pub fn evaluate(expressions: &Vec<Expression>) -> Result<Vec<Expression>, Extend
 
   let mut new_expressions = vec![];
   for (count, expression) in expressions.iter().enumerate() {
-    let new_expression = evaluate_single(&mut state, expression);
+    let new_expression = expression.evaluate(&mut state);
     if let Err(err) = new_expression {
       return Err(ExtendedEvaluationError::LocatedEvaluationError(err, count));
     } else {
@@ -20,150 +20,149 @@ pub fn evaluate(expressions: &Vec<Expression>) -> Result<Vec<Expression>, Extend
   Ok(new_expressions)
 }
 
-fn evaluate_single(
-  state: &mut State,
-  expression: &Expression,
-) -> Result<Expression, EvaluationError> {
-  Ok(match expression {
-    Expression::Value(_) => expression.clone(),
-    Expression::Variable(name) => {
-      let res = state.recall_variable(name);
-      if res.is_some() {
-        res.unwrap()
-      } else {
-        Expression::Variable(name.clone())
-      }
-    }
-    Expression::Function(function_type, arguments) => {
-      evaluate_function(state, function_type, arguments)?
-    }
-    Expression::Assignment(left, right) => match (left.as_ref(), right.as_ref()) {
-      (
-        Expression::Function(func1_type, func1_args),
-        Expression::Function(func2_type, func2_args),
-      ) => {
-        let (name, arguments, exp)= match (func1_type, func2_type) {
-        (FunctionType::Custom(_), FunctionType::Custom(_)) => todo!(),
-        (FunctionType::Custom(name), _) => (name, func1_args, right),
-        (_,FunctionType::Custom(name)) => (name, func2_args, left),
-        _=>panic!("Arbitrary assignment is not supported. Please only assign expressions to custom functions or variables")
-        };
-        let mut variables = vec![];
-        for argument in arguments {
-          match argument {
-            Expression::Variable(name) => variables.push(name.clone()),
-            _ => {
-              return Err(EvaluationError::InvalidFunctionArgument(
-                "Only variables can be arguments when assigning a custom function".to_string(),
-              ))
-            }
-          }
+impl Expression {
+  pub fn evaluate(&self, state: &mut State) -> Result<Expression, EvaluationError> {
+    let expression = self;
+    Ok(match expression {
+      Expression::Value(_) => expression.clone(),
+      Expression::Variable(name) => {
+        let res = state.recall_variable(name);
+        if res.is_some() {
+          res.unwrap()
+        } else {
+          Expression::Variable(name.clone())
         }
-        state.store_function(name, variables.clone(), exp.as_ref().clone())?;
-        Expression::Boolean(true)
       }
-      (Expression::Function(func_type, args), exp)
-      | (exp, Expression::Function(func_type, args)) => match func_type {
-        FunctionType::Custom(name) => {
+      Expression::Function(function_type, arguments) => {
+        evaluate_function(state, function_type, arguments)?
+      }
+      Expression::Assignment(left, right) => match (left.as_ref(), right.as_ref()) {
+        (
+          Expression::Function(func1_type, func1_args),
+          Expression::Function(func2_type, func2_args),
+        ) => {
+          let (name, arguments, exp)= match (func1_type, func2_type) {
+          (FunctionType::Custom(_), FunctionType::Custom(_)) => todo!(),
+          (FunctionType::Custom(name), _) => (name, func1_args, right),
+          (_,FunctionType::Custom(name)) => (name, func2_args, left),
+          _=>panic!("Arbitrary assignment is not supported. Please only assign expressions to custom functions or variables")
+          };
           let mut variables = vec![];
-          for arg in args {
-            match arg {
-              Expression::Variable(ident) => {
-                if variables.contains(ident) {
-                  return Err(EvaluationError::DuplicateFunctionArgument(format!(
-                    "Argument {} was supplied more than once",
-                    ident
-                  )));
-                } else {
-                  variables.push(ident.clone())
-                }
-              }
+          for argument in arguments {
+            match argument {
+              Expression::Variable(name) => variables.push(name.clone()),
               _ => {
                 return Err(EvaluationError::InvalidFunctionArgument(
-                  "Function arguments can only be variables".to_owned(),
+                  "Only variables can be arguments when assigning a custom function".to_string(),
                 ))
               }
             }
           }
-          state.store_function(name, variables.clone(), exp.clone())?;
+          state.store_function(name, variables.clone(), exp.as_ref().clone())?;
+          Expression::Boolean(true)
+        }
+        (Expression::Function(func_type, args), exp)
+        | (exp, Expression::Function(func_type, args)) => match func_type {
+          FunctionType::Custom(name) => {
+            let mut variables = vec![];
+            for arg in args {
+              match arg {
+                Expression::Variable(ident) => {
+                  if variables.contains(ident) {
+                    return Err(EvaluationError::DuplicateFunctionArgument(format!(
+                      "Argument {} was supplied more than once",
+                      ident
+                    )));
+                  } else {
+                    variables.push(ident.clone())
+                  }
+                }
+                _ => {
+                  return Err(EvaluationError::InvalidFunctionArgument(
+                    "Function arguments can only be variables".to_owned(),
+                  ))
+                }
+              }
+            }
+            state.store_function(name, variables.clone(), exp.clone())?;
+            Expression::Boolean(true)
+          }
+          _ => {
+            return Err(EvaluationError::AssignmentError(
+              "Can't assign to operator".to_string(),
+            ))
+          }
+        },
+        (Expression::Variable(_), Expression::Variable(_)) => {
+          todo!("Make it so that variables can be assigned to other variables")
+        }
+        (Expression::Variable(name), exp) | (exp, Expression::Variable(name)) => {
+          state.store_variable(name, exp)?;
           Expression::Boolean(true)
         }
         _ => {
           return Err(EvaluationError::AssignmentError(
-            "Can't assign to operator".to_string(),
-          ))
+            "Can only assign expression to variable or function".to_owned(),
+          ));
         }
       },
-      (Expression::Variable(_), Expression::Variable(_)) => {
-        todo!("Make it so that variables can be assigned to other variables")
-      }
-      (Expression::Variable(name), exp) | (exp, Expression::Variable(name)) => {
-        state.store_variable(name, exp)?;
-        Expression::Boolean(true)
-      }
-      _ => {
-        return Err(EvaluationError::AssignmentError(
-          "Can only assign expression to variable or function".to_owned(),
-        ));
-      }
-    },
-    Expression::Boolean(_) => expression.clone(),
-    Expression::Comparison(comparator, left, right) => {
-      let left = evaluate_single(state, left)?;
-      let right = evaluate_single(state, right)?;
-      let left_val = value_from(&left);
-      let right_val = value_from(&right);
-      let left_bool = bool_from(&left);
-      let right_bool = bool_from(&right);
-      let val = match (left_val, right_val) {
-        (Ok(left), Ok(right)) => {
-          let result = match comparator {
-            ComparisonType::Equal => left == right,
-            ComparisonType::NotEqual => left != right,
-            ComparisonType::LessThan => left < right,
-            ComparisonType::LessThanOrEqual => left <= right,
-            ComparisonType::GreaterThan => left > right,
-            ComparisonType::GreaterThanOrEqual => left >= right,
-          };
-          Some(Expression::Boolean(result))
+      Expression::Boolean(_) => expression.clone(),
+      Expression::Comparison(comparator, left, right) => {
+        let left = left.evaluate(state)?;
+        let right = right.evaluate(state)?;
+        let left_val = value_from(&left);
+        let right_val = value_from(&right);
+        let left_bool = bool_from(&left);
+        let right_bool = bool_from(&right);
+        let val = match (left_val, right_val) {
+          (Ok(left), Ok(right)) => {
+            let result = match comparator {
+              ComparisonType::Equal => left == right,
+              ComparisonType::NotEqual => left != right,
+              ComparisonType::LessThan => left < right,
+              ComparisonType::LessThanOrEqual => left <= right,
+              ComparisonType::GreaterThan => left > right,
+              ComparisonType::GreaterThanOrEqual => left >= right,
+            };
+            Some(Expression::Boolean(result))
+          }
+          _ => None,
+        };
+        let bool = match (left_bool, right_bool) {
+          (Ok(left), Ok(right)) => {
+            let result = match comparator {
+              ComparisonType::Equal => left == right,
+              ComparisonType::NotEqual => left != right,
+              ComparisonType::LessThan => left < right,
+              ComparisonType::LessThanOrEqual => left <= right,
+              ComparisonType::GreaterThan => left > right,
+              ComparisonType::GreaterThanOrEqual => left >= right,
+            };
+            Some(Expression::Boolean(result))
+          }
+          _ => None,
+        };
+        match (val, bool) {
+          (Some(val), _) => val,
+          (_, Some(bool)) => bool,
+          _ => Expression::Comparison(comparator.clone(), Box::new(left), Box::new(right)),
         }
-        _ => None,
-      };
-      let bool = match (left_bool, right_bool) {
-        (Ok(left), Ok(right)) => {
-          let result = match comparator {
-            ComparisonType::Equal => left == right,
-            ComparisonType::NotEqual => left != right,
-            ComparisonType::LessThan => left < right,
-            ComparisonType::LessThanOrEqual => left <= right,
-            ComparisonType::GreaterThan => left > right,
-            ComparisonType::GreaterThanOrEqual => left >= right,
-          };
-          Some(Expression::Boolean(result))
-        }
-        _ => None,
-      };
-      match (val, bool) {
-        (Some(val), _) => val,
-        (_, Some(bool)) => bool,
-        _ => Expression::Comparison(comparator.clone(), Box::new(left), Box::new(right)),
       }
-    }
-    Expression::Condition(if_exp, then_exp, else_exp) => {
-      let if_exp = evaluate_single(state, if_exp)?;
-      let bool_res = bool_from(&if_exp);
-
-      if bool_res.is_err() {
-        Expression::Condition(Box::new(if_exp), then_exp.clone(), else_exp.clone())
-      } else {
-        if bool_res.unwrap() {
-          evaluate_single(state, then_exp.as_ref())?
+      Expression::Condition(if_exp, then_exp, else_exp) => {
+        let if_exp = if_exp.evaluate(state)?;
+        let bool_res = bool_from(&if_exp);
+        if bool_res.is_err() {
+          Expression::Condition(Box::new(if_exp), then_exp.clone(), else_exp.clone())
         } else {
-          evaluate_single(state, else_exp.as_ref())?
+          if bool_res.unwrap() {
+            then_exp.evaluate(state)?
+          } else {
+            else_exp.evaluate(state)?
+          }
         }
       }
-    }
-  })
+    })
+  }
 }
 
 fn evaluate_function(
@@ -174,7 +173,7 @@ fn evaluate_function(
   assure_argument_length(state, function_type, arguments)?;
   let evaluated_arguments = arguments
     .iter()
-    .map(|el| evaluate_single(state, el))
+    .map(|el| el.evaluate(state))
     .collect::<Vec<_>>();
   let mut all_values = true;
   let mut arguments = vec![];
@@ -192,13 +191,7 @@ fn evaluate_function(
     }
   }
   let new_exp = match function_type {
-    FunctionType::Custom(name) => {
-      let func = state.recall_function(name);
-      if func.is_none() {
-        return Err(EvaluationError::FunctionNotFound(name.to_string()));
-      }
-      Some(func.unwrap().get_expression(&arguments)?)
-    }
+    FunctionType::Custom(name) => Some(Function::evaluate(state, name, arguments.clone())?),
     _ => None,
   };
   if all_values && new_exp.is_none() {
@@ -237,7 +230,7 @@ fn evaluate_function(
     };
     Ok(Expression::Value(new_value))
   } else if new_exp.is_some() {
-    Ok(evaluate_single(state, &new_exp.unwrap())?)
+    Ok(new_exp.unwrap().evaluate(state)?)
   } else {
     Ok(Expression::Function(function_type.clone(), arguments))
   }
