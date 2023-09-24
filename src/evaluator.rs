@@ -149,6 +149,20 @@ fn evaluate_single(
         _ => Expression::Comparison(comparator.clone(), Box::new(left), Box::new(right)),
       }
     }
+    Expression::Condition(if_exp, then_exp, else_exp) => {
+      let if_exp = evaluate_single(state, if_exp)?;
+      let bool_res = bool_from(&if_exp);
+
+      if bool_res.is_err() {
+        Expression::Condition(Box::new(if_exp), then_exp.clone(), else_exp.clone())
+      } else {
+        if bool_res.unwrap() {
+          evaluate_single(state, then_exp.as_ref())?
+        } else {
+          evaluate_single(state, else_exp.as_ref())?
+        }
+      }
+    }
   })
 }
 

@@ -8,6 +8,9 @@ fn convert_keyword(text: &str) -> Option<Token> {
   match text {
     "true" => Some(Token::Boolean(true)),
     "false" => Some(Token::Boolean(false)),
+    "if" => Some(Token::Keyword(Keyword::If)),
+    "then" => Some(Token::Keyword(Keyword::Then)),
+    "else" => Some(Token::Keyword(Keyword::Else)),
     _ => None,
   }
 }
@@ -36,6 +39,7 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError> {
               Token::EndOfExpression => true,
               Token::Assignment => true,
               Token::Separator => true,
+              Token::Keyword(_) => true,
 
               Token::Identifier(_) => false,
               Token::Batch(_) => false,
@@ -238,6 +242,22 @@ pub enum Token {
   Expression(Expression),
   Assignment,
   Separator,
+  Keyword(Keyword),
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Keyword {
+  If,
+  Then,
+  Else,
+}
+impl std::fmt::Display for Keyword {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Keyword::If => write!(f, "if"),
+      Keyword::Then => write!(f, "then"),
+      Keyword::Else => write!(f, "else"),
+    }
+  }
 }
 
 #[derive(Debug, Clone)]

@@ -1,6 +1,6 @@
 use num::{BigRational, FromPrimitive};
 
-use crate::tokenizer::{Comparator, Operator, Token};
+use crate::tokenizer::{Comparator, Keyword, Operator, Token};
 pub fn parse(token_stream: Vec<Token>) -> Result<Vec<Expression>, ExtendedParserError> {
   let lines = token_stream
     .split(|el| match el {
@@ -127,6 +127,8 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
   if tokens.len() == 1 {
     return Ok(parse_token(&tokens[0])?);
   }
+
+  // Parse Negate and create Functions
   let mut tokens = tokens;
   let mut index = 0;
   let mut length = tokens.len();
@@ -152,7 +154,7 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
           arguments.push(parse_batches(batch.to_vec())?);
         }
         let expr = Expression::Function(FunctionType::Custom(ident.to_string()), arguments);
-        std::mem::replace(&mut tokens[index], Token::Expression(expr));
+        let _ = std::mem::replace(&mut tokens[index], Token::Expression(expr));
         tokens.remove(index + 1);
         length -= 1;
       }
@@ -221,12 +223,12 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
           length -= 1;
         }
       }
-
       _ => {}
     }
     index += 1;
   }
 
+  // Do all operations in correct order
   let mut order = 0;
   while order < 3 {
     let mut index = 0;
@@ -270,6 +272,19 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
     }
   }
 
+  // Turn all numbers and booleans into expressions
+  for index in 0..tokens.len() {
+    let token = &tokens[index];
+    let new_token = match token {
+      Token::Boolean(bool) => Some(Token::Expression(Expression::Boolean(bool.clone()))),
+      Token::Number(number) => Some(Token::Expression(Expression::Value(number.clone()))),
+      _ => None,
+    };
+    if let Some(token) = new_token {
+      let _ = std::mem::replace(&mut tokens[index], token);
+    }
+  }
+
   // Parse comparisons
   let mut index = 1;
   let mut length = tokens.len();
@@ -300,6 +315,68 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
       _ => {}
     }
     index += 1;
+  }
+
+  // Parse conditions
+  let mut index = 0;
+  let mut length = tokens.len();
+  while index + 5 < length {
+    let if_token = &tokens[index];
+    let if_exp_token = &tokens[index + 1];
+    let then_token = &tokens[index + 2];
+    let then_exp_token = &tokens[index + 3];
+    let else_token = &tokens[index + 4];
+    let else_exp_token = &tokens[index + 5];
+    match (
+      if_token,
+      if_exp_token,
+      then_token,
+      then_exp_token,
+      else_token,
+      else_exp_token,
+    ) {
+      (
+        Token::Keyword(if_kw),
+        Token::Expression(if_exp),
+        Token::Keyword(then_kw),
+        Token::Expression(then_exp),
+        Token::Keyword(else_kw),
+        Token::Expression(else_exp),
+      ) => {
+        if if_kw.clone() == Keyword::If
+          && then_kw.clone() == Keyword::Then
+          && else_kw.clone() == Keyword::Else
+        {
+          let expression = Expression::Condition(
+            Box::new(if_exp.clone()),
+            Box::new(then_exp.clone()),
+            Box::new(else_exp.clone()),
+          );
+          let _ = std::mem::replace(&mut tokens[index], Token::Expression(expression));
+
+          tokens.remove(index + 5);
+          tokens.remove(index + 4);
+          tokens.remove(index + 3);
+          tokens.remove(index + 2);
+          tokens.remove(index + 1);
+
+          length -= 5;
+          index = 0;
+        }
+      }
+      _ => {}
+    }
+    index += 1;
+  }
+
+  if tokens.iter().any(|t| match t {
+    Token::Keyword(_) => true,
+    _ => false,
+  }) {
+    println!("{:#?}", tokens);
+    return Err(ParserError::UnexpectedToken(
+      "Not all keywords parsed successfully".to_string(),
+    ));
   }
 
   if tokens.len() > 1 {
@@ -337,6 +414,12 @@ fn parse_token(token: &Token) -> Result<Expression, ParserError> {
     }
     Token::Batch(tokens) => parse_batches(tokens.to_vec())?,
     Token::Expression(expression) => expression.clone(),
+    Token::Keyword(keyword) => {
+      return Err(ParserError::UnexpectedToken(format!(
+        "Unexpected keyword '{}'",
+        keyword
+      )))
+    }
     Token::BracketClose
     | Token::BracketOpen
     | Token::Assignment
@@ -379,8 +462,47 @@ pub enum Expression {
   Function(FunctionType, Vec<Expression>),
   Assignment(Box<Expression>, Box<Expression>),
   Comparison(ComparisonType, Box<Expression>, Box<Expression>),
+  Condition(Box<Expression>, Box<Expression>, Box<Expression>),
 }
-
+impl std::fmt::Display for Expression {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let str = match self {
+      Expression::Value(val) => val.to_string(),
+      Expression::Boolean(bool) => bool.to_string(),
+      Expression::Variable(ident) => ident.clone(),
+      Expression::Function(func_type, args) => match func_type {
+        FunctionType::Add => format!("({}+{})", &args[0], &args[1]),
+        FunctionType::Subtract => format!("({}-{})", &args[0], &args[1]),
+        FunctionType::Multiply => format!("({}*{})", &args[0], &args[1]),
+        FunctionType::Divide => format!("({}/{})", &args[0], &args[1]),
+        FunctionType::Exponentiation => format!("({}^{})", &args[0], &args[1]),
+        FunctionType::Custom(name) => {
+          let args_count = args.len();
+          let args = args.iter().map(|arg| format!("{}", arg));
+          let mut args_str = String::new();
+          for (index, arg) in args.enumerate() {
+            args_str += &arg;
+            if index + 1 < args_count {
+              args_str += ", ";
+            }
+          }
+          format!("{name}({args_str})")
+        }
+      },
+      Expression::Assignment(l, r) => format!("{}={}", l.as_ref(), r.as_ref()),
+      Expression::Comparison(comp_type, l, r) => {
+        format!("{}{}{}", l.as_ref(), comp_type, r.as_ref())
+      }
+      Expression::Condition(if_exp, then_exp, else_exp) => format!(
+        "if {} then {} else {}",
+        if_exp.as_ref(),
+        then_exp.as_ref(),
+        else_exp.as_ref()
+      ),
+    };
+    write!(f, "{}", str)
+  }
+}
 impl Expression {
   pub fn substitute(&self, variable: &str, expression: &Expression) -> Expression {
     let mut new_exp = self.clone();
@@ -408,6 +530,11 @@ impl Expression {
       Expression::Comparison(_, left, right) => {
         left.substitute_in_place(variable, expression);
         right.substitute_in_place(variable, expression);
+      }
+      Expression::Condition(if_exp, then_exp, else_exp) => {
+        if_exp.substitute_in_place(variable, expression);
+        then_exp.substitute_in_place(variable, expression);
+        else_exp.substitute_in_place(variable, expression);
       }
     }
   }

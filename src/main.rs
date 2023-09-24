@@ -18,16 +18,21 @@ mod tokenizer;
  */
 
 fn main() {
-  // let number = "-31/100";
-  // let rational = BigRational::from_str(number);
-  // println!("{:?}", rational);
+  let input = "
+  f(x)= if x<=1 then 1 else f(x-1) + f(x-2);
+  f(0);
+  f(1);
+  f(2);
+  f(3);
+  f(4);
+  f(5)";
 
-  let data = "f(x)=x<3==false;f(2);f(3)";
-
-  let token_stream = tokenizer::tokenize(data).unwrap();
-  println!("{:#?}", token_stream);
+  let token_stream = tokenizer::tokenize(input).unwrap();
   let expressions = parser::parse(token_stream).unwrap();
-  println!("{:#?}", expressions);
   let evaluated = evaluator::evaluate(&expressions).unwrap();
-  println!("{:#?}", evaluated);
+  for (index, res) in evaluated.iter().enumerate() {
+    let orig_exp = &expressions[index];
+    let index = index + 1;
+    println!("{index}: {orig_exp} -> {res}")
+  }
 }
