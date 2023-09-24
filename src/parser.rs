@@ -493,6 +493,8 @@ impl std::fmt::Display for Expression {
         FunctionType::Multiply => format!("({}*{})", &args[0], &args[1]),
         FunctionType::Divide => format!("({}/{})", &args[0], &args[1]),
         FunctionType::Exponentiation => format!("({}^{})", &args[0], &args[1]),
+        FunctionType::Root => format!("nthRoot({},{})", &args[0], &args[1]),
+        // FunctionType::Logarithm => format!("logn({},{})", &args[0], &args[1]),
         FunctionType::Custom(name) => {
           let args_count = args.len();
           let args = args.iter().map(|arg| format!("{}", arg));
@@ -559,6 +561,8 @@ pub enum FunctionType {
   Multiply,
   Divide,
   Exponentiation,
+  Root,
+  // Logarithm,
   Custom(String),
 }
 
@@ -571,6 +575,8 @@ impl std::fmt::Display for FunctionType {
       FunctionType::Divide => write!(f, "/"),
       FunctionType::Exponentiation => write!(f, "^"),
       FunctionType::Custom(name) => write!(f, "{}(...)", name),
+      FunctionType::Root => write!(f, "root"),
+      // FunctionType::Logarithm => write!(f, "log"),
     }
   }
 }

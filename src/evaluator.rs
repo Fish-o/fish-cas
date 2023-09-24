@@ -28,7 +28,7 @@ impl Expression {
       Expression::Variable(name) => {
         let res = state.recall_variable(name);
         if res.is_some() {
-          res.unwrap()
+          res.unwrap().evaluate(state)?
         } else {
           Expression::Variable(name.clone())
         }
@@ -59,6 +59,36 @@ impl Expression {
             }
           }
           state.store_function(name, variables.clone(), exp.as_ref().clone())?;
+          Expression::Boolean(true)
+        }
+
+        (Expression::Variable(name), exp) | (exp, Expression::Variable(name)) => {
+          state.store_variable(name, exp)?;
+          if let Expression::Function(func_type, args) = exp {
+            if let FunctionType::Custom(name) = func_type {
+              let mut variables = vec![];
+              for arg in args {
+                match arg {
+                  Expression::Variable(ident) => {
+                    if variables.contains(ident) {
+                      return Err(EvaluationError::DuplicateFunctionArgument(format!(
+                        "Argument {} was supplied more than once",
+                        ident
+                      )));
+                    } else {
+                      variables.push(ident.clone())
+                    }
+                  }
+                  _ => {
+                    return Err(EvaluationError::InvalidFunctionArgument(
+                      "Function arguments can only be variables".to_owned(),
+                    ))
+                  }
+                }
+              }
+              state.store_function(name, variables.clone(), exp.clone())?;
+            }
+          }
           Expression::Boolean(true)
         }
         (Expression::Function(func_type, args), exp)
@@ -93,13 +123,6 @@ impl Expression {
             ))
           }
         },
-        (Expression::Variable(_), Expression::Variable(_)) => {
-          todo!("Make it so that variables can be assigned to other variables")
-        }
-        (Expression::Variable(name), exp) | (exp, Expression::Variable(name)) => {
-          state.store_variable(name, exp)?;
-          Expression::Boolean(true)
-        }
         _ => {
           return Err(EvaluationError::AssignmentError(
             "Can only assign expression to variable or function".to_owned(),
@@ -226,6 +249,32 @@ fn evaluate_function(
           Ratio::new(numer, denom)
         }
       }
+      FunctionType::Root => {
+        let base = value_from(&arguments[0])?;
+        let root_base = value_from(&arguments[1])?;
+        let root = root_base.numer();
+        let power = root_base.denom();
+
+        let result = base.pow(power);
+
+        if root == &BigInt::from_u32(1).expect("Could't create number 1") {
+          result
+        } else {
+          // nthRoot(a/b, n) = nthRoot(a, n) / nthRoot(b, n)
+          let numer = result.numer();
+          let denom = result.denom();
+          let root = root.try_into();
+          if let Err(_) = root {
+            return Err(EvaluationError::ValueToLarge(
+              "Trying to take nth root with n being to large".to_string(),
+            ));
+          }
+          let root: u32 = root.unwrap();
+          let numer = numer.nth_root(root);
+          let denom = denom.nth_root(root);
+          Ratio::new(numer, denom)
+        }
+      }
       FunctionType::Custom(_) => unreachable!(),
     };
     Ok(Expression::Value(new_value))
@@ -263,6 +312,7 @@ fn assure_argument_length(
     FunctionType::Multiply => 2,
     FunctionType::Divide => 2,
     FunctionType::Exponentiation => 2,
+    FunctionType::Root => 2,
     FunctionType::Custom(name) => {
       let func = state.recall_function(name);
       if func.is_none() {

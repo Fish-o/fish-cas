@@ -185,16 +185,19 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError> {
     token_stream.push(token)
   }
   let length = token_stream.len() as usize;
-  let mut index = length - 1;
+  let mut index = length as isize - 1;
   while index > 0 {
-    let token = &token_stream[index];
-    let before = &token_stream[index - 1];
+    let token = &token_stream[index as usize];
+    let before = &token_stream[index as usize - 1];
     match token {
       Token::Number(n) => match before {
         Token::Negate => {
           let new_number = n.neg();
-          let _ = std::mem::replace(&mut token_stream[index - 1], Token::Number(new_number));
-          token_stream.remove(index);
+          let _ = std::mem::replace(
+            &mut token_stream[index as usize - 1],
+            Token::Number(new_number),
+          );
+          token_stream.remove(index as usize);
         }
         _ => {}
       },
@@ -205,7 +208,7 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError> {
 
   let mut length = token_stream.len();
   let mut index = 0;
-  while index < length - 2 {
+  while index + 2 < length {
     let token = &token_stream[index];
     let next_token = &token_stream[index + 1];
     if match (token, next_token) {

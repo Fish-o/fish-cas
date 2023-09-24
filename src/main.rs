@@ -1,26 +1,30 @@
+use algebra::free_variable;
 use colored::Colorize;
 use std::{env, io::Write};
 
+mod algebra;
 mod evaluator;
 mod parser;
 mod state;
 mod tokenizer;
-/**
- * TODO:
- * | Tokenizing negatives and decimals
- * | Add implicit multiplication in scenarios like 5a or 2(a+b)
- * | Create custom functions
- * | Add booleans
- * | Add comparators
- * | Add cases for functions
- * - Have exact roots: sqrt(50) = 5sqrt(2)
- * - Graphing
- * - Logarithms
- * - Combinatorics
- * - Logical
- */
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+  let mut state = state::State::new();
+  let left_all = parser::parse(tokenizer::tokenize("x^2 - 1").unwrap()).unwrap();
+  let right_all = parser::parse(tokenizer::tokenize("0").unwrap()).unwrap();
+  let left = &left_all[0];
+  let right = &right_all[0];
+  let res = free_variable(&"x".to_string(), left.clone(), right.clone());
+  println!("{:?}", res);
+  if let Err(err) = res {
+    println!("{:?}", err);
+  } else {
+    let res = res.unwrap();
+    println!("{}", res);
+    let true_res = res.evaluate(&mut state).unwrap();
+    println!("{}", true_res);
+  }
+  loop {}
   let args: Vec<String> = env::args().collect();
   // let wd = std::env::current_dir()?;
   if args.len() != 2 {
@@ -60,6 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         continue;
       }
       for exp in expressions.unwrap().iter() {
+        // println!("{exp}");
         let evaluated = exp.evaluate(&mut state).unwrap().to_string().bold();
         println!("{execution_count}: {evaluated}");
         execution_count += 1;
