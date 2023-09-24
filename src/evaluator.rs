@@ -85,7 +85,7 @@ fn evaluate_single(
               }
             }
           }
-          let func = state.store_function(name, variables.clone(), exp.clone())?;
+          state.store_function(name, variables.clone(), exp.clone())?;
           Expression::Boolean(true)
         }
         _ => {
@@ -233,7 +233,7 @@ fn evaluate_function(
           Ratio::new(numer, denom)
         }
       }
-      FunctionType::Custom(name) => unreachable!(),
+      FunctionType::Custom(_) => unreachable!(),
     };
     Ok(Expression::Value(new_value))
   } else if new_exp.is_some() {
@@ -302,6 +302,7 @@ pub enum EvaluationError {
 
 #[derive(Debug, Clone)]
 pub enum ExtendedEvaluationError {
+  #[allow(dead_code)]
   EvaluationError(EvaluationError),
   LocatedEvaluationError(EvaluationError, usize),
 }

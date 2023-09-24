@@ -167,13 +167,13 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
             batch,
           ],
         );
-        std::mem::replace(&mut tokens[index], Token::Expression(expr));
+        let _ = std::mem::replace(&mut tokens[index], Token::Expression(expr));
         tokens.remove(index + 1);
         length -= 1;
       }
       (Token::Negate, Token::Identifier(ident)) => {
         let mut should_negate = true;
-        let mut identifier = ident.clone();
+        let identifier = ident.clone();
         if index + 2 < length {
           let next_el = &tokens[index + 2];
           match next_el {
@@ -201,7 +201,7 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
                   function_expr,
                 ],
               );
-              std::mem::replace(&mut tokens[index], Token::Expression(multiply_expr));
+              let _ = std::mem::replace(&mut tokens[index], Token::Expression(multiply_expr));
               tokens.remove(index + 1);
               length -= 1;
             }
@@ -218,7 +218,7 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
               variable,
             ],
           );
-          std::mem::replace(&mut tokens[index], Token::Expression(expr));
+          let _ = std::mem::replace(&mut tokens[index], Token::Expression(expr));
           tokens.remove(index + 1);
           length -= 1;
         }
@@ -442,6 +442,7 @@ fn get_order(op: &Operator) -> u32 {
 
 #[derive(Debug, Clone)]
 pub enum ExtendedParserError {
+  #[allow(dead_code)]
   ParserError(ParserError),
   LocatedParserError(ParserError, usize),
 }
@@ -504,21 +505,16 @@ impl std::fmt::Display for Expression {
   }
 }
 impl Expression {
-  pub fn substitute(&self, variable: &str, expression: &Expression) -> Expression {
-    let mut new_exp = self.clone();
-    new_exp.substitute_in_place(variable, expression);
-    new_exp
-  }
   pub fn substitute_in_place(&mut self, variable: &str, expression: &Expression) {
     match self {
       Expression::Boolean(_) => {}
-      Expression::Value(val) => {}
+      Expression::Value(_) => {}
       Expression::Variable(ident) => {
         if ident == variable {
           let _ = std::mem::replace(self, expression.clone());
         }
       }
-      Expression::Function(name, args) => {
+      Expression::Function(_, args) => {
         for arg in args {
           arg.substitute_in_place(variable, expression)
         }

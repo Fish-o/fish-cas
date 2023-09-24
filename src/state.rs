@@ -1,5 +1,4 @@
 use crate::{evaluator::EvaluationError, parser::Expression};
-use num::BigRational;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -20,7 +19,7 @@ impl State {
     variable: &String,
     exp: &Expression,
   ) -> Result<Expression, StateError> {
-    if let Some(val) = self.variables.get(variable) {
+    if let Some(_) = self.variables.get(variable) {
       todo!("Implement a system where you can assign variables multiple times or something, maybe make it compare instead")
     } else {
       self.variables.insert(variable.clone(), exp.clone());
@@ -64,16 +63,16 @@ impl State {
 
 #[derive(Debug, Clone)]
 pub enum StateError {
-  ContradictoryStateError(String),
+  // ContradictoryStateError(String),
   FunctionAlreadyDeclared,
-  UnknownStateError(String),
+  // UnknownStateError(String),
 }
-#[derive(Debug, Clone)]
-pub enum VariableState {
-  Numeric(BigRational),
-  // Relation(String),
-  // Function(Vec<String>, Expression),
-}
+// #[derive(Debug, Clone)]
+// pub enum VariableState {
+//   Numeric(BigRational),
+//   // Relation(String),
+//   // Function(Vec<String>, Expression),
+// }
 
 #[derive(Debug, Clone)]
 pub struct Function {
