@@ -552,6 +552,61 @@ impl Expression {
       }
     }
   }
+  pub fn variables_used(&self) -> Vec<String> {
+    let mut variables = vec![];
+    match self {
+      Expression::Boolean(_) => {}
+      Expression::Value(_) => {}
+      Expression::Variable(ident) => {
+        variables.push(ident.clone());
+      }
+      Expression::Function(_, args) => {
+        for arg in args {
+          variables.append(&mut arg.variables_used());
+        }
+      }
+      Expression::Assignment(exp1, exp2) => {
+        variables.append(&mut exp1.variables_used());
+        variables.append(&mut exp2.variables_used());
+      }
+      Expression::Comparison(_, left, right) => {
+        variables.append(&mut left.variables_used());
+        variables.append(&mut right.variables_used());
+      }
+      Expression::Condition(if_exp, then_exp, else_exp) => {
+        variables.append(&mut if_exp.variables_used());
+        variables.append(&mut then_exp.variables_used());
+        variables.append(&mut else_exp.variables_used());
+      }
+    }
+    variables
+  }
+  pub fn is_algebraic(&self) -> bool {
+    match self {
+      Expression::Boolean(_) => true,
+      Expression::Value(_) => true,
+      Expression::Variable(_) => true,
+      Expression::Function(func_type, args) => match func_type {
+        FunctionType::Add
+        | FunctionType::Subtract
+        | FunctionType::Multiply
+        | FunctionType::Divide
+        | FunctionType::Exponentiation
+        | FunctionType::Root => {
+          for arg in args {
+            if !arg.is_algebraic() {
+              return false;
+            }
+          }
+          true
+        }
+        FunctionType::Custom(_) => todo!(),
+      },
+      Expression::Assignment(_, _) => false,
+      Expression::Comparison(_, _, _) => false,
+      Expression::Condition(_, _, _) => false,
+    }
+  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

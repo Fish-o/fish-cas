@@ -9,22 +9,22 @@ mod state;
 mod tokenizer;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-  let mut state = state::State::new();
-  let left_all = parser::parse(tokenizer::tokenize("x^2 - 1").unwrap()).unwrap();
-  let right_all = parser::parse(tokenizer::tokenize("0").unwrap()).unwrap();
-  let left = &left_all[0];
-  let right = &right_all[0];
-  let res = free_variable(&"x".to_string(), left.clone(), right.clone());
-  println!("{:?}", res);
-  if let Err(err) = res {
-    println!("{:?}", err);
-  } else {
-    let res = res.unwrap();
-    println!("{}", res);
-    let true_res = res.evaluate(&mut state).unwrap();
-    println!("{}", true_res);
-  }
-  loop {}
+  // let mut state = state::State::new();
+  // let left_all = parser::parse(tokenizer::tokenize("x^2 - 1").unwrap()).unwrap();
+  // let right_all = parser::parse(tokenizer::tokenize("0").unwrap()).unwrap();
+  // let left = &left_all[0];
+  // let right = &right_all[0];
+  // let res = free_variable(&"x".to_string(), left.clone(), right.clone());
+  // println!("{:?}", res);
+  // if let Err(err) = res {
+  //   println!("{:?}", err);
+  // } else {
+  //   let res = res.unwrap();
+  //   println!("{}", res);
+  //   let true_res = res.evaluate(&mut state).unwrap();
+  //   println!("{}", true_res);
+  // }
+  // loop {}
   let args: Vec<String> = env::args().collect();
   // let wd = std::env::current_dir()?;
   if args.len() != 2 {

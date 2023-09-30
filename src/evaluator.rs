@@ -28,7 +28,12 @@ impl Expression {
       Expression::Variable(name) => {
         let res = state.recall_variable(name);
         if res.is_some() {
-          res.unwrap().evaluate(state)?
+          let exp = res.unwrap();
+          if state.is_variable_looping(name, &vec![]) {
+            exp
+          } else {
+            exp.evaluate(state)?
+          }
         } else {
           Expression::Variable(name.clone())
         }

@@ -1,4 +1,4 @@
-use crate::{evaluator::EvaluationError, parser::Expression};
+use crate::{algebra::free_variable, evaluator::EvaluationError, parser::Expression};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -14,6 +14,26 @@ impl State {
       functions: HashMap::new(),
     }
   }
+  pub fn is_variable_looping(&self, variable: &String, been: &Vec<String>) -> bool {
+    let new_been = {
+      let mut new_been = been.clone();
+      new_been.push(variable.clone());
+      new_been
+    };
+    while let Some(e) = self.variables.get(variable) {
+      let vars = e.variables_used();
+      // Remove duplicates
+      for var in vars {
+        if new_been.contains(&var) {
+          return true;
+        } else if self.is_variable_looping(&var, &new_been) {
+          return true;
+        }
+      }
+    }
+    false
+  }
+
   pub fn store_variable(
     &mut self,
     variable: &String,
@@ -22,6 +42,24 @@ impl State {
     if let Some(_) = self.variables.get(variable) {
       todo!("Implement a system where you can assign variables multiple times or something, maybe make it compare instead")
     } else {
+      if exp.is_algebraic() {
+        let used_variables = exp.variables_used();
+        for used_var in used_variables {
+          let res = free_variable(
+            &used_var,
+            Expression::Variable(variable.clone()),
+            exp.clone(),
+          );
+          if let Ok(res) = res {
+            self.variables.insert(used_var, res);
+          } else {
+            println!(
+              "Error parsing variable: \n{}\n{}\n{}\n{:?}",
+              variable, used_var, exp, res
+            );
+          }
+        }
+      }
       self.variables.insert(variable.clone(), exp.clone());
     }
     Ok(exp.clone())
