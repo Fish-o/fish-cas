@@ -6,11 +6,26 @@ pub struct State {
   variables: HashMap<String, Expression>,
   functions: HashMap<String, Function>,
 }
-
+fn check_equality(exp1: &Expression, exp2: &Expression) -> bool {
+  match (exp1, exp2) {
+    (Expression::Value(val1), Expression::Value(val2)) => val1 == val2,
+    (Expression::Variable(var1), Expression::Variable(var2)) => var1 == var2,
+    (Expression::Function(name1, args1), Expression::Function(name2, args2)) => {
+      name1 == name2 && args1 == args2
+    }
+    _ => false,
+  }
+}
 impl State {
   pub fn new() -> Self {
     Self {
       variables: HashMap::new(),
+      functions: HashMap::new(),
+    }
+  }
+  pub fn from(vars: HashMap<String, Expression>) -> Self {
+    Self {
+      variables: vars,
       functions: HashMap::new(),
     }
   }
@@ -22,6 +37,9 @@ impl State {
     };
     while let Some(e) = self.variables.get(variable) {
       let vars = e.variables_used();
+      if vars.is_empty() {
+        return false;
+      }
       // Remove duplicates
       for var in vars {
         if new_been.contains(&var) {
@@ -39,7 +57,17 @@ impl State {
     variable: &String,
     exp: &Expression,
   ) -> Result<Expression, StateError> {
-    if let Some(_) = self.variables.get(variable) {
+    if let Some(stored) = self.variables.get(variable) {
+      // stored(x) = exp(x)
+      // 0 = exp(x) - stored(x)
+      if check_equality(stored, exp) {
+        return Ok(stored.clone());
+      } else if stored == exp {
+        println!("== SOMEHOW WORKED!?");
+        return Ok(stored.clone());
+      }
+      println!("Var {variable}: {} = {}", stored, exp);
+      // Collapse all variables
       todo!("Implement a system where you can assign variables multiple times or something, maybe make it compare instead")
     } else {
       if exp.is_algebraic() {
@@ -102,6 +130,16 @@ impl State {
   pub fn clear(&mut self) {
     self.variables.clear();
     self.functions.clear();
+  }
+
+  pub fn expand(&mut self, state: State) {
+    for (key, value) in state.variables {
+      println!("expanding {} = {}", key, value);
+      let _ = self.store_variable(&key, &value);
+    }
+    for (key, value) in state.functions {
+      let _ = self.store_function(&key, value.arguments, value.expression);
+    }
   }
 }
 

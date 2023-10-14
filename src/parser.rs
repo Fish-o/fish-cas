@@ -1,6 +1,11 @@
+use std::error::Error;
+
 use num::{BigRational, FromPrimitive};
 
-use crate::tokenizer::{Comparator, Keyword, Operator, Token};
+use crate::{
+  state::Function,
+  tokenizer::{Comparator, Keyword, Operator, Token, TokenError},
+};
 pub fn parse(token_stream: Vec<Token>) -> Result<Vec<Expression>, ExtendedParserError> {
   let lines = token_stream
     .split(|el| match el {
@@ -388,14 +393,14 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
     Token::Keyword(_) => true,
     _ => false,
   }) {
-    println!("{:#?}", tokens);
+    log::error!("{:#?}", tokens);
     return Err(ParserError::UnexpectedToken(
       "Not all keywords parsed successfully".to_string(),
     ));
   }
 
   if tokens.len() > 1 {
-    println!("{:?}", tokens);
+    log::error!("{:?}", tokens);
     return Err(ParserError::UnknownParserError(
       "To many tokens left".to_string(),
     ));
@@ -404,7 +409,7 @@ pub fn parse_batches(tokens: Vec<Token>) -> Result<Expression, ParserError> {
   if let Token::Expression(exp) = token {
     return Ok(exp.clone());
   } else {
-    println!("{:?}", tokens);
+    log::error!("{:?}", tokens);
     return Err(ParserError::UnknownParserError(
       "Last token not an expression".to_string(),
     ));
@@ -461,6 +466,7 @@ pub enum ExtendedParserError {
   ParserError(ParserError),
   LocatedParserError(ParserError, usize),
 }
+
 #[derive(Debug, Clone)]
 pub enum ParserError {
   BatchingError(String),
@@ -469,8 +475,10 @@ pub enum ParserError {
   UnexpectedToken(String),
   UnknownParserError(String),
   InvalidAssignment(String),
+  TokenizerError(TokenError),
 }
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Expression {
   Value(BigRational),
   Boolean(bool),
@@ -523,6 +531,25 @@ impl std::fmt::Display for Expression {
   }
 }
 impl Expression {
+  pub fn node_count(&self) -> u32 {
+    match self {
+      Expression::Boolean(_) => 1,
+      Expression::Value(_) => 1,
+      Expression::Variable(_) => 1,
+      Expression::Function(_, args) => {
+        let mut count = 1;
+        for arg in args {
+          count += arg.node_count();
+        }
+        count
+      }
+      Expression::Assignment(exp1, exp2) => exp1.node_count() + exp2.node_count(),
+      Expression::Comparison(_, left, right) => left.node_count() + right.node_count(),
+      Expression::Condition(if_exp, then_exp, else_exp) => {
+        if_exp.node_count() + then_exp.node_count() + else_exp.node_count()
+      }
+    }
+  }
   pub fn substitute_in_place(&mut self, variable: &str, expression: &Expression) {
     match self {
       Expression::Boolean(_) => {}
@@ -607,8 +634,96 @@ impl Expression {
       Expression::Condition(_, _, _) => false,
     }
   }
+  pub fn number(number: i32) -> Expression {
+    Expression::Value(BigRational::from_i32(number).expect("Couldn't create number"))
+  }
+  pub fn var(variable: &str) -> Expression {
+    Expression::Variable(variable.to_string())
+  }
+  pub fn add(left: Expression, right: Expression) -> Expression {
+    Expression::Function(FunctionType::Add, vec![left, right])
+  }
+  pub fn subtract(left: Expression, right: Expression) -> Expression {
+    Expression::Function(FunctionType::Subtract, vec![left, right])
+  }
+  pub fn multiply(left: Expression, right: Expression) -> Expression {
+    Expression::Function(FunctionType::Multiply, vec![left, right])
+  }
+  pub fn divide(left: Expression, right: Expression) -> Expression {
+    Expression::Function(FunctionType::Divide, vec![left, right])
+  }
+  pub fn exp(left: Expression, right: Expression) -> Expression {
+    Expression::Function(FunctionType::Exponentiation, vec![left, right])
+  }
+  pub fn root(left: Expression, right: Expression) -> Expression {
+    Expression::Function(FunctionType::Root, vec![left, right])
+  }
+  pub fn negate(exp: Expression) -> Expression {
+    Expression::Function(FunctionType::Multiply, vec![Expression::number(-1), exp])
+  }
+  pub fn from(text: &str) -> Result<Expression, ExtendedParserError> {
+    let tokens = crate::tokenizer::tokenize(text);
+    match tokens {
+      Ok(tokens) => {
+        let expressions = parse(tokens);
+        match expressions {
+          Ok(expressions) => {
+            if expressions.len() == 1 {
+              Ok(expressions[0].clone())
+            } else {
+              Err(ExtendedParserError::ParserError(
+                ParserError::UnknownParserError("To many expressions".to_string()),
+              ))
+            }
+          }
+          Err(err) => Err(err),
+        }
+      }
+      Err(err) => Err(ExtendedParserError::ParserError(
+        ParserError::TokenizerError(err),
+      )),
+    }
+  }
 }
-
+impl std::fmt::Debug for Expression {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Expression::Value(a) => write!(f, "Value[{a}]"),
+      Expression::Boolean(b) => write!(f, "Bool[{b}]"),
+      Expression::Variable(v) => write!(f, "Variable[{v}]"),
+      Expression::Function(name, args) => {
+        let simple: Option<&str> = match name {
+          FunctionType::Add => Some("+"),
+          FunctionType::Subtract => Some("-"),
+          FunctionType::Multiply => Some("*"),
+          FunctionType::Divide => Some("/"),
+          FunctionType::Exponentiation => Some("^"),
+          FunctionType::Root => None,
+          FunctionType::Custom(_) => None,
+        };
+        if let Some(simple) = simple {
+          write!(f, "({:?}{}{:?})", args[0], simple, args[1])
+        } else {
+          let mut args_str = String::new();
+          for (index, arg) in args.iter().enumerate() {
+            args_str += &format!("{:?}", arg.to_string());
+            if index + 1 < args.len() {
+              args_str += ", ";
+            }
+          }
+          write!(f, "Function[{name}:{args_str}]")
+        }
+      }
+      Expression::Assignment(l, r) => write!(f, "[{l}={r}]"),
+      Expression::Comparison(comp_type, l, r) => {
+        write!(f, "({:?}{}{:?})", l, comp_type, r)
+      }
+      Expression::Condition(if_exp, then_exp, els_exp) => {
+        write!(f, "if {:?} then {:?} else {:?}", if_exp, then_exp, els_exp)
+      }
+    }
+  }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FunctionType {
   Add,

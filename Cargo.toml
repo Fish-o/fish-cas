@@ -7,4 +7,8 @@ edition = "2021"
 
 [dependencies]
 colored = "2.0.4"
-num = "0.4.1"
+env_logger = "0.10.0"
+log = "0.4.20"
+num = {version="0.4.1", features = ["std","rand"]}
+rand = "0.8.5"
+random = "0.14.0"

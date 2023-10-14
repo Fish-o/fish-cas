@@ -22,6 +22,19 @@ pub fn evaluate(expressions: &Vec<Expression>) -> Result<Vec<Expression>, Extend
 
 impl Expression {
   pub fn evaluate(&self, state: &mut State) -> Result<Expression, EvaluationError> {
+    log::debug!(
+      "Evaluating: {:#?}, {:#?}",
+      match self {
+        Expression::Value(_) => "Value",
+        Expression::Variable(_) => "Variable",
+        Expression::Function(_, _) => "Function",
+        Expression::Assignment(_, _) => "Assignment",
+        Expression::Boolean(_) => "Boolean",
+        Expression::Comparison(_, _, _) => "Comparison",
+        Expression::Condition(_, _, _) => "Condition",
+      },
+      self
+    );
     let expression = self;
     Ok(match expression {
       Expression::Value(_) => expression.clone(),
@@ -198,6 +211,7 @@ fn evaluate_function(
   function_type: &FunctionType,
   arguments: &Vec<Expression>,
 ) -> Result<Expression, EvaluationError> {
+  log::debug!("Evaluating function {:?}", function_type);
   assure_argument_length(state, function_type, arguments)?;
   let evaluated_arguments = arguments
     .iter()
